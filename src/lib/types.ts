@@ -140,6 +140,46 @@ export interface EnvioCorreo {
   fechaEnvio?: string;
 }
 
+export type EstadoExtraccion = 'PENDIENTE' | 'EXTRAIDO' | 'CONFIRMADO' | 'RECHAZADO';
+
+export type TipoEspacioConfinado = 'I' | 'II';
+
+export interface EspacioNom033 {
+  clave: string;
+  nombre: string;
+  area: string;
+  lel: number | null;
+  o2: number | null;
+  h2s: number | null;
+  co: number | null;
+  fecha: string;
+  tipoDeclarado: TipoEspacioConfinado | null;
+  tipoCalculado: TipoEspacioConfinado | null;
+  cumple: boolean | null;
+}
+
+export interface ArchivoReferencia {
+  nombre: string;
+  hashSha256: string;
+  tamanoBytes: number;
+  storageKey: string;
+}
+
+export interface ReporteReferencia {
+  id: number;
+  empresaId: number;
+  centroTrabajoId: number;
+  tipoEstudioId: number;
+  fecha: string;
+  archivo: ArchivoReferencia;
+  estadoExtraccion: EstadoExtraccion;
+  espacios: EspacioNom033[];
+  advertencias: string[];
+  motivoRechazo?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface BitacoraEvento {
   id: number;
   empresaId?: number | null;

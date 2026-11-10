@@ -64,6 +64,8 @@ button, input, select, textarea {
 
 .main-content {
   flex: 1;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
@@ -74,6 +76,7 @@ button, input, select, textarea {
   max-width: 1400px;
   margin: 0 auto;
   width: 100%;
+  min-width: 0;
 }
 
 /* Common Components */
@@ -226,6 +229,49 @@ button, input, select, textarea {
 /* Tables */
 .table-responsive {
   overflow-x: auto;
+  max-width: 100%;
+}
+
+.comparacion-pagina {
+  max-width: none;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+.comparacion-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.comparacion-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.comparacion-table col.col-clave { width: 5%; }
+.comparacion-table col.col-situacion { width: 7%; }
+.comparacion-table col.col-nombre { width: 12%; }
+.comparacion-table col.col-numero { width: 4.5%; }
+.comparacion-table col.col-texto { width: 7.3%; }
+
+.comparacion-table th,
+.comparacion-table td {
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
+  padding: 0.4rem 0.28rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  vertical-align: top;
+}
+
+.comparacion-table th {
+  font-size: 0.68rem;
+}
+
+.comparacion-table td:nth-child(n + 4):nth-child(-n + 15) {
+  white-space: nowrap;
 }
 
 .data-table {

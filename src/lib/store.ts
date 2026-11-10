@@ -5,8 +5,10 @@ import {
   Empresa,
   EnvioCorreo,
   EstadoEstudio,
+  EstadoExtraccion,
   Estudio,
   Impresion,
+  ReporteReferencia,
   TipoEstudio,
   User,
   UserRole,
@@ -255,6 +257,83 @@ class MemoryStore {
       createdAt: '2025-11-20T08:00:00Z',
       updatedAt: '2025-11-22T09:00:00Z',
     },
+    {
+      id: 4,
+      folio: 'EST-2026-0004',
+      empresaId: 1,
+      centroTrabajoId: 1,
+      tipoEstudioId: 9, // NOM-033-STPS-2015
+      elaboradorId: 1,
+      usuarioRegistroId: 3,
+      fechaRealizacion: '2026-04-02',
+      fechaVigencia: '2027-04-02',
+      estado: 'BORRADOR',
+      datos: {
+        alcance_reconocimiento:
+          'Inventario sintético para probar la comparación contra un reporte anterior. No corresponde a un centro real.',
+        equipo_medicion: 'Detector multigas de demostración, serie DEMO-033',
+        espacios_confinados: [
+          {
+            Clave: 'EC-01',
+            Nombre: 'Cisterna de agua tratada',
+            Área: 'Área de servicios',
+            'LEL (%)': '0',
+            'O2 (%)': '21.1',
+            'H2S (ppm)': '0',
+            'CO (ppm)': '2',
+            Fecha: '2026-04-02',
+            'Tipo I/II': 'I',
+          },
+          {
+            Clave: 'EC-02',
+            Nombre: 'Tanque vertical de solvente inflamable',
+            Área: 'Patio de químicos',
+            'LEL (%)': '11.2',
+            'O2 (%)': '20.1',
+            'H2S (ppm)': '0.2',
+            'CO (ppm)': '6',
+            Fecha: '2026-04-02',
+            'Tipo I/II': 'I',
+          },
+          {
+            Clave: 'EC-03',
+            Nombre: 'Registro eléctrico subterráneo',
+            Área: 'Área de subestación',
+            'LEL (%)': '1',
+            'O2 (%)': '20.7',
+            'H2S (ppm)': '0.1',
+            'CO (ppm)': '4',
+            Fecha: '2026-04-02',
+            'Tipo I/II': 'II',
+          },
+          {
+            Clave: 'EC-05',
+            Nombre: 'Fosa de retén de agua pluvial',
+            Área: 'Zona norte',
+            'LEL (%)': '1.5',
+            'O2 (%)': '20.8',
+            'H2S (ppm)': '0',
+            'CO (ppm)': '3',
+            Fecha: '2026-04-02',
+            'Tipo I/II': 'I',
+          },
+          {
+            Clave: 'EC-06',
+            Nombre: 'Caseta de bombas',
+            Área: 'Cuarto de máquinas',
+            'LEL (%)': '2',
+            'O2 (%)': '20.6',
+            'H2S (ppm)': '0',
+            'CO (ppm)': '1',
+            Fecha: '2026-04-02',
+            'Tipo I/II': 'I',
+          },
+        ],
+      },
+      adjuntos: [],
+      createdAt: '2026-04-02T09:00:00Z',
+      updatedAt: '2026-04-02T09:00:00Z',
+    },
   ];
 
   impresiones: Impresion[] = [
@@ -287,6 +366,8 @@ class MemoryStore {
       fechaEnvio: '2026-02-18T15:05:30Z',
     },
   ];
+
+  reportesReferencia: ReporteReferencia[] = [];
 
   bitacora: BitacoraEvento[] = [
     {
@@ -328,8 +409,11 @@ class MemoryStore {
   ];
 }
 
-// Singleton global
-const globalStore = new MemoryStore();
+// Una sola instancia por proceso. En `next dev` cada ruta puede evaluar este
+// módulo por su cuenta; sin esto el reporte subido no aparece al confirmarlo.
+const registroGlobal = globalThis as typeof globalThis & { __nomStpsMemoryStore?: MemoryStore };
+const globalStore = registroGlobal.__nomStpsMemoryStore ?? new MemoryStore();
+registroGlobal.__nomStpsMemoryStore = globalStore;
 
 export const store = {
   // --- USUARIOS & AUTENTICACIÓN ---
@@ -771,5 +855,81 @@ export const store = {
       vencidos,
       indiceCumplimiento: Math.max(0, indiceCumplimiento),
     };
+  },
+
+  // --- REPORTES DE REFERENCIA ---
+  listarReportesReferencia(filtro?: {
+    empresaId?: number | null;
+    centroTrabajoId?: number | null;
+    tipoEstudioId?: number | null;
+    estadoExtraccion?: EstadoExtraccion | null;
+  }): ReporteReferencia[] {
+    return globalStore.reportesReferencia.filter((reporte) => {
+      if (filtro?.empresaId && reporte.empresaId !== filtro.empresaId) return false;
+      if (filtro?.centroTrabajoId && reporte.centroTrabajoId !== filtro.centroTrabajoId) return false;
+      if (filtro?.tipoEstudioId && reporte.tipoEstudioId !== filtro.tipoEstudioId) return false;
+      if (filtro?.estadoExtraccion && reporte.estadoExtraccion !== filtro.estadoExtraccion) return false;
+      return true;
+    });
+  },
+
+  obtenerReporteReferencia(id: number): ReporteReferencia | undefined {
+    return globalStore.reportesReferencia.find((reporte) => reporte.id === id);
+  },
+
+  insertarReporteReferencia(
+    datos: Omit<ReporteReferencia, 'id' | 'createdAt' | 'updatedAt'>,
+    usuarioId: number
+  ): ReporteReferencia {
+    const ahora = new Date().toISOString();
+    const reporte: ReporteReferencia = {
+      ...datos,
+      id: Math.max(0, ...globalStore.reportesReferencia.map((item) => item.id)) + 1,
+      createdAt: ahora,
+      updatedAt: ahora,
+    };
+    globalStore.reportesReferencia.push(reporte);
+    this.registrarBitacora({
+      empresaId: reporte.empresaId,
+      usuarioId,
+      ip: '127.0.0.1',
+      accion: 'CARGAR_REPORTE_REFERENCIA',
+      entidad: 'REPORTE_REFERENCIA',
+      entidadId: reporte.id,
+      detalles: {
+        archivo: reporte.archivo.nombre,
+        hashSha256: reporte.archivo.hashSha256,
+        estado: reporte.estadoExtraccion,
+        espacios: reporte.espacios.length,
+      },
+    });
+    return reporte;
+  },
+
+  actualizarReporteReferencia(
+    id: number,
+    parcial: Partial<Omit<ReporteReferencia, 'id' | 'createdAt'>>,
+    usuarioId: number,
+    accion: string
+  ): ReporteReferencia {
+    const index = globalStore.reportesReferencia.findIndex((reporte) => reporte.id === id);
+    if (index < 0) throw new Error('Reporte de referencia no encontrado.');
+    const actualizado: ReporteReferencia = {
+      ...globalStore.reportesReferencia[index],
+      ...parcial,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    globalStore.reportesReferencia[index] = actualizado;
+    this.registrarBitacora({
+      empresaId: actualizado.empresaId,
+      usuarioId,
+      ip: '127.0.0.1',
+      accion,
+      entidad: 'REPORTE_REFERENCIA',
+      entidadId: id,
+      detalles: { estado: actualizado.estadoExtraccion, espacios: actualizado.espacios.length },
+    });
+    return actualizado;
   },
 };

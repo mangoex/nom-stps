@@ -55,6 +55,28 @@ La autenticación es de demostración y no debe tratarse como control de acceso 
 - RN-08 (reintentos de correo) está simulado con `setTimeout`. No hay SMTP ni retroceso exponencial real.
 - El esquema SQL, las políticas RLS y el trigger de retención de 5 años no se ejecutan en runtime.
 
+## Reportes de referencia (NOM-033)
+
+Fase 1, todavía sobre el `MemoryStore`. El proveedor de archivos no está elegido: `FileStorage` tiene memoria y disco local (`data/referencias`, fuera de git).
+
+```bash
+npm run dev
+```
+
+1. Abre `http://localhost:3000/reportes-referencia/nuevo`.
+2. Deja la empresa de demostración, el centro Planta Tijuana y la NOM-033. Fecha `2025-03-15`.
+3. Sube `public/fixtures/nom033-anexo-sintetico.pdf` (datos inventados, filas partidas).
+4. Revisa la tabla, corrige si hace falta y marca **CONFIRMADO**.
+5. Abre el estudio de prueba `EST-2026-0004` en `/estudios/4` y entra a **Comparar con referencia**.
+6. La vista se imprime con el botón del navegador. No se mete al dictamen oficial.
+
+Solo un reporte en estado `CONFIRMADO` participa. `PENDIENTE`, `EXTRAIDO` y `RECHAZADO` no se comparan. Confirmar exige el estado `EXTRAIDO` y al menos un espacio; un `RECHAZADO` o un `PENDIENTE` no se confirman. El tipo escrito en la ficha y el tipo calculado con la medición se guardan por separado.
+
+### Deuda explícita (no se implementa en esta demo)
+
+- **Auth y aislamiento.** `src/app/api/reportes-referencia/*` y `src/app/api/estudios/[id]/comparar` no exigen sesión y no aíslan por empresa más allá del `empresaId` que manda el cliente. Al confirmar, `resolverUsuarioId` toma el id de `getCurrentUser` si el helper trae uno; si no, usa el `usuarioId` del body. Ese helper no valida el token: en el servidor devuelve al revisor de demostración. No es control de acceso.
+- **RLS.** La migración prende RLS en `reportes_referencia`. La tabla `resultados_espacio_referencia` no tiene política RLS. Postgres no está cableado, así que ninguna de las dos se aplica en runtime.
+
 ## Dónde está cada regla
 
 | Regla | Dónde vive el TypeScript que sí corre | Qué cubre la prueba |

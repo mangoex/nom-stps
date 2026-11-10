@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   UserCheck,
   FileText,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 export default function EstudioDetallePage() {
@@ -174,6 +175,12 @@ export default function EstudioDetallePage() {
                 <button type="button" className="btn btn-success" onClick={() => setIsApproveOpen(true)}>
                   <CheckCircle2 size={16} /> Dictaminar y Aprobar
                 </button>
+              )}
+
+              {tipo?.claveNOM === 'NOM-033-STPS-2015' && (
+                <Link href={`/estudios/${estudio.id}/comparar?empresaId=1`} className="btn btn-secondary">
+                  <ArrowLeftRight size={16} /> Comparar con referencia
+                </Link>
               )}
 
               <Link href={`/estudios/${estudio.id}/imprimir`} className="btn btn-primary">

@@ -33,3 +33,6 @@ __pycache__/
 
 # Datos locales de desarrollo (no van al repo público)
 data/
+
+# Salidas del navegador de verificación
+.playwright-mcp/

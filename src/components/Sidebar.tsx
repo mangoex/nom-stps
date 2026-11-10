@@ -11,6 +11,7 @@ import {
   UserCheck,
   ShieldAlert,
   ClipboardList,
+  Files,
   LayoutDashboard,
   PlusCircle,
   LogOut,
@@ -32,6 +33,7 @@ export function Sidebar({
   const navItems = [
     { label: 'Tablero de Control', href: '/dashboard', icon: LayoutDashboard },
     { label: 'Estudios NOM-STPS', href: '/estudios', icon: FileText },
+    { label: 'Reportes de referencia', href: '/reportes-referencia', icon: Files },
     { label: 'Registrar Estudio', href: '/estudios/nuevo', icon: PlusCircle },
     { label: 'Catálogo de Normas', href: '/catalogos', icon: BookOpen },
     { label: 'Centros de Trabajo', href: '/centros', icon: MapPin },
