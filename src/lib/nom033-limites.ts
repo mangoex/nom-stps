@@ -16,6 +16,8 @@ import { EspacioNom033, TipoEspacioConfinado } from './types';
  * - Monóxido de carbono, CAS 630-08-0: la cifra publicada en ese apéndice
  *   es 25 ppm (notación IBE). En el compendio tabular de la STPS la celda
  *   puede verse en la columna de corto tiempo; por eso el valor es configurable.
+ *
+ * Los VLE de H2S (1 ppm) y CO (25 ppm) se deben confirmar contra la NOM-010.
  */
 export interface LimitesNom033 {
   o2Min: number;
@@ -56,9 +58,13 @@ export function textoCriterioCumplimiento(limites: LimitesNom033 = LIMITES_NOM03
 }
 
 export function normalizarClaveEspacio(raw: string): string {
-  const match = raw.toUpperCase().match(/EC\s*-\s*(\d+)/);
+  const match = raw.toUpperCase().match(/EC\s*-\s*(\d+)([A-Z])?(?!\w)/);
   if (!match) return raw.trim().toUpperCase();
-  return `EC-${String(parseInt(match[1], 10)).padStart(2, '0')}`;
+  return `EC-${String(parseInt(match[1], 10)).padStart(2, '0')}${match[2] ?? ''}`;
+}
+
+export function esClaveEspacio(clave: string): boolean {
+  return /^EC-\d+[A-Z]?$/.test(clave);
 }
 
 export function normalizarFechaMedicion(raw: string): string {
@@ -95,10 +101,31 @@ export function parseTipoEspacio(raw: string | null | undefined): TipoEspacioCon
 export function numeroFlexible(raw: unknown): number | null {
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
   if (typeof raw !== 'string') return null;
-  const limpio = raw.trim().replace(',', '.');
-  if (!limpio) return null;
-  const valor = Number(limpio);
+  const original = raw.trim();
+  if (!original) return null;
+  if (/^(n\/d|n\.d\.|nd)$/i.test(original)) return null;
+  if (/^<\s*ld$/i.test(original)) return 0;
+  const sinCota = original.replace(/^<\s*/, '');
+  const normalizado = normalizarSeparadoresNumericos(sinCota);
+  if (!normalizado) return null;
+  const valor = Number(normalizado);
   return Number.isFinite(valor) ? valor : null;
+}
+
+function normalizarSeparadoresNumericos(texto: string): string {
+  const compacto = texto.replace(/\s/g, '');
+  const ultimaComa = compacto.lastIndexOf(',');
+  const ultimoPunto = compacto.lastIndexOf('.');
+  if (ultimaComa >= 0 && ultimoPunto >= 0) {
+    if (ultimaComa > ultimoPunto) {
+      return compacto.replaceAll('.', '').replaceAll(',', '.');
+    }
+    return compacto.replaceAll(',', '');
+  }
+  if (ultimaComa >= 0) return compacto.replaceAll(',', '.');
+  const puntos = compacto.match(/\./g);
+  if (puntos && puntos.length > 1) return compacto.replaceAll('.', '');
+  return compacto;
 }
 
 export function etiquetaCumple(cumple: boolean | null): string {
@@ -132,6 +159,9 @@ export function evaluarEspacioNom033(
   const o2 = entrada.o2;
   const h2s = entrada.h2s;
   const co = entrada.co;
+  if ((lel != null && lel < 0) || (h2s != null && h2s < 0) || (co != null && co < 0)) {
+    return { ...entrada, tipoCalculado: null, cumple: null };
+  }
   const completo = lel != null && o2 != null && h2s != null && co != null;
 
   if (!completo) {

@@ -3,6 +3,7 @@ import {
   EntradaEspacioNom033,
   evaluarEspacioNom033,
   LIMITES_NOM033,
+  esClaveEspacio,
   normalizarClaveEspacio,
   numeroFlexible,
   parseTipoEspacio,
@@ -11,6 +12,7 @@ import { compararEspaciosNom033, espaciosDesdeCaptura, ResultadoComparacion } fr
 import { parsearNom033 } from './nom033-parser';
 import { extraerTextoPdf } from './pdf-text';
 import { getFileStorage } from './file-storage';
+import { getCurrentUser } from './auth';
 import { store } from './store';
 import { EspacioNom033, Estudio, ReporteReferencia } from './types';
 
@@ -34,15 +36,25 @@ export interface AltaReporteReferencia {
   usuarioId?: number;
 }
 
-const MAX_BYTES = 20 * 1024 * 1024;
+const MAX_BYTES_DEFAULT = 20 * 1024 * 1024;
+
+export function limiteBytesReporte(): number {
+  const configurado = Number(process.env.REPORTE_MAX_BYTES);
+  if (Number.isFinite(configurado) && configurado > 0) return configurado;
+  return MAX_BYTES_DEFAULT;
+}
+
+export function resolverUsuarioId(request?: Request, usuarioIdBody?: unknown): number {
+  if (request) {
+    const sesion = getCurrentUser(request);
+    if (sesion?.id) return sesion.id;
+  }
+  const numerico = Number(usuarioIdBody);
+  return Number.isFinite(numerico) && numerico > 0 ? numerico : 2;
+}
 
 export async function subirReporteReferencia(input: AltaReporteReferencia): Promise<ReporteReferencia> {
-  if (!input.contenido.length) {
-    throw new ReferenciaError('REF-ARCHIVO', 'El archivo está vacío.');
-  }
-  if (input.contenido.length > MAX_BYTES) {
-    throw new ReferenciaError('REF-ARCHIVO', 'El archivo supera 20 MB.');
-  }
+  validarArchivoAntesDeGuardar(input.nombreArchivo, input.contenido);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.fecha)) {
     throw new ReferenciaError('REF-FECHA', 'La fecha del reporte debe ir en formato AAAA-MM-DD.');
   }
@@ -96,6 +108,15 @@ export function confirmarReporteReferencia(
   usuarioId = 2
 ): ReporteReferencia {
   const reporte = exigirReporte(id);
+  if (reporte.estadoExtraccion !== 'EXTRAIDO') {
+    throw new ReferenciaError(
+      'REF-ESTADO',
+      `Solo se confirma un reporte en estado EXTRAIDO. Este está ${reporte.estadoExtraccion}.`
+    );
+  }
+  if (!entradas.length) {
+    throw new ReferenciaError('REF-VACIO', 'Hace falta al menos un espacio para confirmar.');
+  }
   const espacios = normalizarEntradas(entradas);
   return store.actualizarReporteReferencia(
     reporte.id,
@@ -201,8 +222,8 @@ function normalizarEntradas(entradas: EntradaEspacioNom033[]): EspacioNom033[] {
   const vistos = new Set<string>();
   return entradas.map((entrada) => {
     const clave = normalizarClaveEspacio(entrada.clave || '');
-    if (!/^EC-\d+$/.test(clave)) {
-      throw new ReferenciaError('REF-CLAVE', 'Cada espacio necesita una clave EC-nn.');
+    if (!esClaveEspacio(clave)) {
+      throw new ReferenciaError('REF-CLAVE', 'Cada espacio necesita una clave EC-nn o EC-nnA.');
     }
     if (vistos.has(clave)) {
       throw new ReferenciaError('REF-CLAVE', `La clave ${clave} está repetida.`);
@@ -220,6 +241,29 @@ function normalizarEntradas(entradas: EntradaEspacioNom033[]): EspacioNom033[] {
       tipoDeclarado: parseTipoEspacio(entrada.tipoDeclarado),
     });
   });
+}
+
+function validarArchivoAntesDeGuardar(nombre: string, contenido: Buffer): void {
+  if (!contenido.length) {
+    throw new ReferenciaError('REF-ARCHIVO', 'El archivo está vacío.');
+  }
+  if (contenido.length > limiteBytesReporte()) {
+    throw new ReferenciaError(
+      'REF-ARCHIVO',
+      `El archivo supera el tamaño máximo de ${limiteBytesReporte()} bytes.`
+    );
+  }
+  const lower = nombre.toLowerCase();
+  if (lower.endsWith('.pdf')) {
+    const firma = contenido.subarray(0, 5).toString('latin1');
+    if (!firma.startsWith('%PDF-')) {
+      throw new ReferenciaError('REF-ARCHIVO', 'El archivo no tiene la firma de un PDF (%PDF-).');
+    }
+    return;
+  }
+  if (!lower.endsWith('.txt')) {
+    throw new ReferenciaError('REF-ARCHIVO', 'Solo se aceptan archivos PDF o TXT.');
+  }
 }
 
 async function textoDelArchivo(nombre: string, contenido: Buffer): Promise<string> {

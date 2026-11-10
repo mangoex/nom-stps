@@ -70,7 +70,12 @@ npm run dev
 5. Abre el estudio de prueba `EST-2026-0004` en `/estudios/4` y entra a **Comparar con referencia**.
 6. La vista se imprime con el botón del navegador. No se mete al dictamen oficial.
 
-Solo un reporte en estado `CONFIRMADO` participa. `PENDIENTE`, `EXTRAIDO` y `RECHAZADO` no se comparan. El tipo escrito en la ficha y el tipo calculado con la medición se guardan por separado.
+Solo un reporte en estado `CONFIRMADO` participa. `PENDIENTE`, `EXTRAIDO` y `RECHAZADO` no se comparan. Confirmar exige el estado `EXTRAIDO` y al menos un espacio; un `RECHAZADO` o un `PENDIENTE` no se confirman. El tipo escrito en la ficha y el tipo calculado con la medición se guardan por separado.
+
+### Deuda explícita (no se implementa en esta demo)
+
+- **Auth y aislamiento.** `src/app/api/reportes-referencia/*` y `src/app/api/estudios/[id]/comparar` no exigen sesión y no aíslan por empresa más allá del `empresaId` que manda el cliente. Al confirmar, `resolverUsuarioId` toma el id de `getCurrentUser` si el helper trae uno; si no, usa el `usuarioId` del body. Ese helper no valida el token: en el servidor devuelve al revisor de demostración. No es control de acceso.
+- **RLS.** La migración prende RLS en `reportes_referencia`. La tabla `resultados_espacio_referencia` no tiene política RLS. Postgres no está cableado, así que ninguna de las dos se aplica en runtime.
 
 ## Dónde está cada regla
 

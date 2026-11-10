@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { confirmarReporteReferencia, rechazarReporteReferencia } from '@/lib/reportes-referencia';
+import { confirmarReporteReferencia, rechazarReporteReferencia, resolverUsuarioId } from '@/lib/reportes-referencia';
 import { EntradaEspacioNom033 } from '@/lib/nom033-limites';
 
 type AccionConfirmacion = 'CONFIRMAR' | 'RECHAZAR';
@@ -12,7 +12,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
   try {
     const body = await request.json();
     const id = parseInt(params.id, 10);
-    const usuarioId = Number(body.usuarioId || 2);
+    const usuarioId = resolverUsuarioId(request, body.usuarioId);
     const accion: unknown = body.accion;
 
     if (!esAccion(accion)) {

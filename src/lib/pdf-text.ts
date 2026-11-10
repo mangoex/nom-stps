@@ -17,31 +17,37 @@ export async function extraerTextoPdf(contenido: Buffer): Promise<string> {
     const pagina = await pdf.getPage(numero);
     const contenidoPagina = await pagina.getTextContent();
     const items = contenidoPagina.items as ItemTexto[];
-    paginas.push(agruparRenglones(items));
+    paginas.push(agruparItemsPorRenglon(items));
   }
 
   return paginas.filter(Boolean).join('\n');
 }
 
-function agruparRenglones(items: ItemTexto[]): string {
-  const filas = new Map<number, { x: number; texto: string }[]>();
+const TOLERANCIA_Y_PX = 2;
 
+export function agruparItemsPorRenglon(items: ItemTexto[]): string {
+  const partes: { x: number; y: number; texto: string }[] = [];
   for (const item of items) {
     const texto = item.str?.trim();
     const transform = item.transform;
     if (!texto || !transform || transform.length < 6) continue;
-    const y = Math.round(transform[5]);
-    const grupo = filas.get(y) ?? [];
-    grupo.push({ x: transform[4], texto });
-    filas.set(y, grupo);
+    partes.push({ x: transform[4], y: transform[5], texto });
   }
 
-  const ys: number[] = [];
-  filas.forEach((_grupo, y) => ys.push(y));
-  ys.sort((a, b) => b - a);
-  return ys
-    .map((y) =>
-      (filas.get(y) ?? [])
+  partes.sort((a, b) => b.y - a.y || a.x - b.x);
+  const filas: { ancla: number; partes: { x: number; y: number; texto: string }[] }[] = [];
+  for (const parte of partes) {
+    const ultima = filas[filas.length - 1];
+    if (ultima && Math.abs(ultima.ancla - parte.y) <= TOLERANCIA_Y_PX) {
+      ultima.partes.push(parte);
+    } else {
+      filas.push({ ancla: parte.y, partes: [parte] });
+    }
+  }
+
+  return filas
+    .map((fila) =>
+      fila.partes
         .sort((a, b) => a.x - b.x)
         .map((parte) => parte.texto)
         .join(' ')

@@ -99,7 +99,7 @@ export default function CompararEstudioPage() {
       <Sidebar />
       <div className="main-content">
         <Navbar titulo="Comparativo de referencia" subtitulo="No forma parte del dictamen oficial" />
-        <main className="page-body">
+        <main className="page-body comparacion-pagina">
           <style>{`@media print { @page { size: landscape; margin: 12mm; } }`}</style>
           <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '1rem' }}>
             <Link href={`/estudios/${id}`} className="btn btn-secondary">
@@ -137,9 +137,16 @@ export default function CompararEstudioPage() {
                   <p>Cambios de cumplimiento: {resumen.cambiosCumplimiento}</p>
                 </div>
               </header>
-              <div className="card table-responsive">
-                <table className="data-table">
+              <div className="card table-responsive comparacion-scroll">
+                <table className="data-table comparacion-table">
                   <caption>Comparación por clave de espacio confinado</caption>
+                  <colgroup>
+                    <col className="col-clave" />
+                    <col className="col-situacion" />
+                    <col className="col-nombre" />
+                    <col span={12} className="col-numero" />
+                    <col span={3} className="col-texto" />
+                  </colgroup>
                   <thead>
                     <tr>
                       <th scope="col">Clave</th>

@@ -3,6 +3,7 @@ import {
   evaluarEspacioNom033,
   LimitesNom033,
   LIMITES_NOM033,
+  esClaveEspacio,
   normalizarClaveEspacio,
   normalizarFechaMedicion,
   numeroFlexible,
@@ -58,7 +59,7 @@ export function espaciosDesdeCaptura(
     if (!fila || typeof fila !== 'object') return [];
     const registro = fila as Record<string, unknown>;
     const clave = normalizarClaveEspacio(String(registro[claveCol] ?? ''));
-    if (!/^EC-\d+$/.test(clave)) return [];
+    if (!esClaveEspacio(clave)) return [];
     const fechaTexto = String(registro[fechaCol] ?? '');
     return [
       evaluarEspacioNom033(
@@ -143,7 +144,11 @@ function armarFila(anterior: EspacioNom033 | null, nuevo: EspacioNom033 | null):
   const cambioTipoDeclarado = anterior.tipoDeclarado !== nuevo.tipoDeclarado;
   const cambioTipoCalculado = anterior.tipoCalculado !== nuevo.tipoCalculado;
   const cambioCumplimiento = anterior.cumple !== nuevo.cumple;
-  const cambioNumeros = deltas.some((item) => item.delta !== 0);
+  const cambioNumeros = deltas.some((item) => {
+    if (item.anterior == null && item.nuevo == null) return false;
+    if (item.anterior == null || item.nuevo == null) return true;
+    return item.delta !== 0;
+  });
   const cambioTexto = anterior.nombre !== nuevo.nombre || anterior.area !== nuevo.area;
   const huboCambio = cambioNumeros || cambioTexto || cambioTipoDeclarado || cambioTipoCalculado || cambioCumplimiento;
 
