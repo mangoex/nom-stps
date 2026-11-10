@@ -75,17 +75,34 @@ function describir(nombre: string, contenido: Buffer): ArchivoGuardado {
 
 let actual: FileStorage | null = null;
 
+/**
+ * Sin FILE_STORAGE (o con "memory") guarda en memoria. En Vercel el disco es de
+ * solo lectura y esos archivos se pierden al reiniciar la función.
+ * Disco local solo con FILE_STORAGE=local.
+ */
 export function getFileStorage(): FileStorage {
   if (!actual) {
-    if (process.env.FILE_STORAGE === 'memory' || process.env.NODE_ENV === 'test') {
-      actual = new MemoryFileStorage();
-    } else {
-      actual = new LocalFileStorage(path.join(process.cwd(), 'data', 'referencias'));
-    }
+    actual = crearFileStorage(process.env.FILE_STORAGE);
   }
   return actual;
 }
 
 export function setFileStorage(storage: FileStorage): void {
   actual = storage;
+}
+
+export function resetFileStorage(): void {
+  actual = null;
+}
+
+export function crearFileStorage(modo: string | undefined): FileStorage {
+  if (modo === undefined || modo === '' || modo === 'memory') {
+    return new MemoryFileStorage();
+  }
+  if (modo === 'local') {
+    return new LocalFileStorage(path.join(process.cwd(), 'data', 'referencias'));
+  }
+  throw new Error(
+    `FILE_STORAGE="${modo}" no es válido. Usa "memory" o "local". En memoria los archivos se pierden al reiniciar el proceso.`
+  );
 }

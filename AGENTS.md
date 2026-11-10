@@ -57,7 +57,13 @@ La autenticación es de demostración y no debe tratarse como control de acceso 
 
 ## Reportes de referencia (NOM-033)
 
-Fase 1, todavía sobre el `MemoryStore`. El proveedor de archivos no está elegido: `FileStorage` tiene memoria y disco local (`data/referencias`, fuera de git).
+Fase 1, todavía sobre el `MemoryStore`. El texto del reporte se guarda con `FileStorage`.
+
+`FILE_STORAGE` vale `memory` o `local`:
+
+- Sin variable, vacío o `memory`: memoria. Es el valor de la demo y de Vercel. El disco de las funciones es de solo lectura (`/var/task`), y lo que está en memoria se pierde al reiniciar el proceso.
+- `local`: disco en `data/referencias` (fuera de git). Solo si el entorno puede escribir.
+- Cualquier otro valor detiene el arranque del almacén con un error. No hay Blob ni S3 en este código.
 
 ```bash
 npm run dev
