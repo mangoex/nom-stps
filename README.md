@@ -21,6 +21,7 @@ El sistema cubre integralmente las obligaciones patronales contempladas en:
 - **NOM-036-1-STPS-2018:** Factores de riesgo ergonómico (Manejo manual de cargas).
 - **NOM-002-STPS-2010:** Prevención y protección contra incendios.
 - **NOM-017-STPS-2024:** Equipo de Protección Personal (en vigor sept-2025).
+- **NOM-033-STPS-2015:** Espacios confinados. El comparativo contra un reporte anterior no forma parte del dictamen oficial.
 - **NOM-015-STPS-2001, NOM-024-STPS-2001, NOM-030-STPS-2009, NOM-019-STPS-2011**, etc.
 
 El sistema **no codifica las normas en duro**: trata cada estudio como un tipo de estudio dinámico configurable con sus propios campos de captura (`CampoEstudio`) y reglas de periodicidad.

@@ -1,0 +1,40 @@
+ANEXO 1. INVENTARIO DE ESPACIOS CONFINADOS
+Datos sintéticos de un centro imaginario. No son de un cliente.
+
+Clave     Nombre / Área                         LEL (%)   O2 (%)   H2S (ppm)   CO (ppm)   Fecha
+EC-01     Cisterna de agua                      0.0       20.9     0.0         2.0        15/03/2025
+          tratada
+          Área de servicios
+EC-02     Tanque vertical de
+          solvente inflamable
+          Patio de químicos                     8.4       20.1     0.2         6.0        15/03/2025
+EC-03     Registro eléctrico
+          subterráneo                           3.0       17.8
+          Área de subestación                   6.0       40.0       16/03/2025
+EC-04     Ducto de ventilación                  14.0      20.5     0.1         1.0        2025-03-16
+          Área de techos
+EC-05     Fosa de retén de
+          agua pluvial
+          Zona norte                            1.5       20.8     0.0         3.0        16/03/2025
+
+FICHAS DE CLASIFICACIÓN
+
+FICHA EC-01
+Nombre: Cisterna de agua tratada
+Clasificación del reporte: Tipo I
+
+FICHA EC-02
+Nombre: Tanque vertical de solvente inflamable
+Clasificación del reporte: Tipo I
+
+FICHA EC-03
+Nombre: Registro eléctrico subterráneo
+Clasificación del reporte: Tipo II
+
+FICHA EC-04
+Nombre: Ducto de ventilación
+Clasificación del reporte: Tipo I
+
+FICHA EC-05
+Nombre: Fosa de retén de agua pluvial
+Clasificación del reporte: Tipo I

@@ -1,3 +1,4 @@
+import { COLUMNAS_ESPACIOS_NOM033 } from './nom033-limites';
 import { TipoEstudio } from './types';
 
 export const CATALOGO_NOM_INICIAL: TipoEstudio[] = [
@@ -380,6 +381,48 @@ export const CATALOGO_NOM_INICIAL: TipoEstudio[] = [
         tipoDato: 'textarea',
         obligatorio: true,
         orden: 2,
+      },
+    ],
+  },
+  {
+    id: 9,
+    claveNOM: 'NOM-033-STPS-2015',
+    nombre: 'Espacios confinados',
+    descripcion:
+      'Condiciones de seguridad para realizar trabajos en espacios confinados. El inventario de espacios se captura en la tabla y el cumplimiento de la atmósfera se calcula; no se teclea una columna de cumple. La vigencia de 12 meses es un plazo operativo del sistema para volver a revisar el inventario, no un plazo tomado de la norma.',
+    periodicidadMeses: 12,
+    categoria: 'Seguridad',
+    activo: true,
+    campos: [
+      {
+        id: 901,
+        tipoEstudioId: 9,
+        nombreCampo: 'alcance_reconocimiento',
+        etiqueta: 'Alcance del reconocimiento de espacios confinados',
+        tipoDato: 'textarea',
+        obligatorio: true,
+        orden: 1,
+      },
+      {
+        id: 902,
+        tipoEstudioId: 9,
+        nombreCampo: 'equipo_medicion',
+        etiqueta: 'Equipo de medición de atmósfera y número de serie',
+        tipoDato: 'text',
+        obligatorio: true,
+        orden: 2,
+      },
+      {
+        id: 903,
+        tipoEstudioId: 9,
+        nombreCampo: 'espacios_confinados',
+        etiqueta: 'Inventario de espacios confinados y atmósfera medida',
+        tipoDato: 'table',
+        obligatorio: true,
+        orden: 3,
+        columnasTabla: [...COLUMNAS_ESPACIOS_NOM033],
+        ayudaNormativa:
+          'O2 de 19.5 a 23.5 %. Tipo I si además LEL < 10 % del LIE y H2S y CO < 0.5 del VLE configurado. El tipo escrito en la ficha puede no coincidir con el calculado. No hay columna de cumple.',
       },
     ],
   },
