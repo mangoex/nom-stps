@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { POST as confirmarRuta } from '../src/app/api/reportes-referencia/[id]/confirmar/route';
 import { getCurrentUser } from '../src/lib/auth';
 import { FileStorage, setFileStorage } from '../src/lib/file-storage';
+import { validarPdfCliente } from '../src/lib/pdf-cliente';
+import { POST as subirRuta } from '../src/app/api/reportes-referencia/route';
+import { interpretarRespuesta } from '../src/lib/respuesta-http';
 import { compararEspaciosNom033, espaciosDesdeCaptura } from '../src/lib/nom033-comparacion';
 import { evaluarEspacioNom033, numeroFlexible } from '../src/lib/nom033-limites';
 import { parsearNom033 } from '../src/lib/nom033-parser';
@@ -173,7 +176,7 @@ describe('revisión del texto PDF y de la carga', () => {
         return null;
       }
     })());
-    delete process.env.REPORTE_MAX_BYTES;
+    delete process.env.REPORTE_MAX_TEXTO_BYTES;
   });
 
   it('junta en un renglón los fragmentos que difieren hasta 2 px en Y', () => {
@@ -186,37 +189,60 @@ describe('revisión del texto PDF y de la carga', () => {
     expect(texto.split('\n')).toHaveLength(2);
   });
 
-  it('rechaza un PDF sin firma antes de guardarlo', async () => {
+  it('en el cliente exige la firma %PDF- y un máximo de 50 MB', () => {
+    expect(validarPdfCliente(new Uint8Array([1, 2, 3, 4, 5]), 5)).toMatch(/PDF/);
+    const firma = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]);
+    expect(validarPdfCliente(firma, 50 * 1024 * 1024 + 1)).toMatch(/50 MB/);
+    expect(validarPdfCliente(firma, 1024)).toBeNull();
+  });
+
+  it('rechaza un texto que no cabe holgado en 4 MB antes de guardarlo', async () => {
     const almacen = new AlmacenContador();
     setFileStorage(almacen);
+    process.env.REPORTE_MAX_TEXTO_BYTES = '8';
     await expect(
       subirReporteReferencia({
         empresaId: 1,
         centroTrabajoId: 1,
         tipoEstudioId: tipoNom033().id,
         fecha: '2025-03-15',
-        nombreArchivo: 'falso.pdf',
-        contenido: Buffer.from('esto no es un pdf'),
+        nombreArchivo: 'grande.pdf',
+        tamanoBytes: 1024,
+        hashSha256: 'e'.repeat(64),
+        texto: '123456789',
       })
-    ).rejects.toThrow(/PDF/);
+    ).rejects.toThrow(/texto|4 MB|bytes/i);
     expect(almacen.guardados).toBe(0);
   });
 
-  it('respeta un tamaño máximo configurable antes de guardar', async () => {
-    const almacen = new AlmacenContador();
-    setFileStorage(almacen);
-    process.env.REPORTE_MAX_BYTES = '8';
-    await expect(
-      subirReporteReferencia({
+  it('el API acepta el texto extraído y responde JSON ante un error', async () => {
+    const texto = 'EC-09 Pozo  0  20.9  0  1  15/03/2025\nFICHA EC-09\nClasificación del reporte: Tipo I\n';
+    const request = new Request('http://localhost/api/reportes-referencia', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
         empresaId: 1,
         centroTrabajoId: 1,
         tipoEstudioId: tipoNom033().id,
         fecha: '2025-03-15',
-        nombreArchivo: 'grande.txt',
-        contenido: Buffer.from('123456789'),
-      })
-    ).rejects.toThrow(/tamaño|MB|bytes/i);
-    expect(almacen.guardados).toBe(0);
+        nombreArchivo: 'siete-mb.pdf',
+        tamanoBytes: 7 * 1024 * 1024,
+        hashSha256: 'f'.repeat(64),
+        texto,
+      }),
+    });
+    const respuesta = await subirRuta(request);
+    expect(respuesta.status).toBe(201);
+    const cuerpo = await respuesta.json();
+    expect(cuerpo.estadoExtraccion).toBe('EXTRAIDO');
+    expect(cuerpo.archivo.tamanoBytes).toBe(7 * 1024 * 1024);
+    expect(cuerpo.archivo.hashSha256).toBe('f'.repeat(64));
+    expect(cuerpo.espacios[0].clave).toBe('EC-09');
+
+    const enorme = interpretarRespuesta(413, 'Request Entity Too Large');
+    expect(enorme.ok).toBe(false);
+    expect(enorme.mensaje).toMatch(/demasiado grande/);
+    expect(enorme.mensaje).not.toMatch(/Unexpected token/);
   });
 });
 
@@ -240,7 +266,9 @@ describe('revisión de la confirmación', () => {
       tipoEstudioId: tipoId,
       fecha: '2025-02-01',
       nombreArchivo: 'vacio.txt',
-      contenido: Buffer.from('sin filas de anexo'),
+      tamanoBytes: 18,
+      hashSha256: '1'.repeat(64),
+      texto: 'sin filas de anexo',
     });
     expect(pendiente.estadoExtraccion).toBe('PENDIENTE');
     expect(() => confirmarReporteReferencia(pendiente.id, pendiente.espacios)).toThrow(/EXTRAIDO/);
@@ -251,7 +279,9 @@ describe('revisión de la confirmación', () => {
       tipoEstudioId: tipoId,
       fecha: '2025-03-15',
       nombreArchivo: 'anexo.txt',
-      contenido: Buffer.from('EC-01 Cisterna  0  20.9  0  1  15/03/2025\nFICHA EC-01\nClasificación del reporte: Tipo I\n'),
+      tamanoBytes: 80,
+      hashSha256: '2'.repeat(64),
+      texto: 'EC-01 Cisterna  0  20.9  0  1  15/03/2025\nFICHA EC-01\nClasificación del reporte: Tipo I\n',
     });
     expect(() => confirmarReporteReferencia(extraido.id, [])).toThrow(/espacio/);
     rechazarReporteReferencia(extraido.id, 'No corresponde al centro.');
@@ -265,7 +295,9 @@ describe('revisión de la confirmación', () => {
       tipoEstudioId: tipoNom033().id,
       fecha: '2025-03-15',
       nombreArchivo: 'anexo-sesion.txt',
-      contenido: Buffer.from('EC-03 Registro  1  20.8  0  1  15/03/2025\nFICHA EC-03\nClasificación del reporte: Tipo II\n'),
+      tamanoBytes: 90,
+      hashSha256: '3'.repeat(64),
+      texto: 'EC-03 Registro  1  20.8  0  1  15/03/2025\nFICHA EC-03\nClasificación del reporte: Tipo II\n',
     });
     const request = new Request('http://localhost/api/reportes-referencia/1/confirmar', {
       method: 'POST',

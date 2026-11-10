@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { subirReporteReferencia } from '@/lib/reportes-referencia';
+import { resolverUsuarioId, subirReporteReferencia } from '@/lib/reportes-referencia';
 import { store } from '@/lib/store';
 
 export async function GET(request: Request) {
@@ -28,26 +28,27 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const form = await request.formData();
-    const archivo = form.get('archivo');
-    if (!(archivo instanceof File)) {
-      return NextResponse.json({ error: 'Falta el archivo.', codigo: 'REF-ARCHIVO' }, { status: 422 });
+    const body = await request.json();
+    if (typeof body.texto !== 'string') {
+      return NextResponse.json({ error: 'Falta el texto extraído del reporte.', codigo: 'REF-TEXTO' }, { status: 422 });
     }
-
     const reporte = await subirReporteReferencia({
-      empresaId: Number(form.get('empresaId') || 1),
-      centroTrabajoId: Number(form.get('centroTrabajoId')),
-      tipoEstudioId: Number(form.get('tipoEstudioId')),
-      fecha: String(form.get('fecha') || ''),
-      nombreArchivo: archivo.name,
-      contenido: Buffer.from(await archivo.arrayBuffer()),
-      usuarioId: Number(form.get('usuarioId') || 2),
+      empresaId: Number(body.empresaId || 1),
+      centroTrabajoId: Number(body.centroTrabajoId),
+      tipoEstudioId: Number(body.tipoEstudioId),
+      fecha: String(body.fecha || ''),
+      nombreArchivo: String(body.nombreArchivo || ''),
+      tamanoBytes: Number(body.tamanoBytes),
+      hashSha256: String(body.hashSha256 || ''),
+      texto: body.texto,
+      usuarioId: resolverUsuarioId(request, body.usuarioId),
     });
 
     return NextResponse.json(reporte, { status: 201 });
   } catch (error: any) {
+    const mensaje = error instanceof SyntaxError ? 'El cuerpo debe ser JSON con el texto extraído, no el PDF.' : error.message;
     return NextResponse.json(
-      { error: error.message, codigo: error.codigo || 'VALIDATION_ERROR' },
+      { error: mensaje, codigo: error.codigo || 'VALIDATION_ERROR' },
       { status: 422 }
     );
   }
