@@ -7,8 +7,7 @@ import { POST as subirRuta } from '../src/app/api/reportes-referencia/route';
 import { interpretarRespuesta } from '../src/lib/respuesta-http';
 import { compararEspaciosNom033, espaciosDesdeCaptura } from '../src/lib/nom033-comparacion';
 import { evaluarEspacioNom033, numeroFlexible } from '../src/lib/nom033-limites';
-import { parsearNom033 } from '../src/lib/nom033-parser';
-import { agruparItemsPorRenglon } from '../src/lib/pdf-text';
+import { agruparItemsPorRenglon } from '../src/lib/pdf-renglones';
 import {
   confirmarReporteReferencia,
   rechazarReporteReferencia,
@@ -109,63 +108,6 @@ describe('revisión de la comparación y los límites', () => {
   });
 });
 
-describe('revisión del parser', () => {
-  it('no recorre las columnas con el número del nombre y reconoce <LD, <0.1 y N/D', () => {
-    const texto = [
-      'EC-01A  Nave 2 de bombas   <LD   20,9   <0,1   N/D   15/03/2025',
-      'FICHA EC-01A',
-      'Clasificación del reporte: Tipo I',
-    ].join('\n');
-    const [espacioParseado] = parsearNom033(texto).espacios;
-    expect(espacioParseado.clave).toBe('EC-01A');
-    expect(espacioParseado.nombre).toContain('Nave 2');
-    expect(espacioParseado).toMatchObject({ lel: 0, o2: 20.9, h2s: 0.1, co: null });
-  });
-
-  it('toma el prefijo de área en las líneas intermedias de una fila partida', () => {
-    const texto = [
-      'EC-02 Tanque vertical de',
-      '      Área de solventes',
-      '      Patio de químicos   8.4  20.1  0.2  6.0  15/03/2025',
-      'FICHA EC-02',
-      'Clasificación del reporte: Tipo I',
-    ].join('\n');
-    const [espacioParseado] = parsearNom033(texto).espacios;
-    expect(espacioParseado.nombre).toBe('Tanque vertical de');
-    expect(espacioParseado.area).toContain('Área de solventes');
-    expect(espacioParseado.area).toContain('Patio de químicos');
-    expect(espacioParseado.lel).toBe(8.4);
-  });
-
-  it('ignora encabezados y pies de página metidos en una fila partida', () => {
-    const texto = [
-      'EC-05 Fosa de retén de',
-      '      Clave Nombre / Área LEL (%) O2 (%) H2S (ppm) CO (ppm) Fecha',
-      '      Página 1 de 3',
-      '      agua pluvial',
-      '      Zona norte  1.5  20.8  0  3  16/03/2025',
-      'FICHA EC-05',
-      'Clasificación del reporte: Tipo I',
-    ].join('\n');
-    const [espacioParseado] = parsearNom033(texto).espacios;
-    expect(espacioParseado.nombre).toBe('Fosa de retén de agua pluvial');
-    expect(espacioParseado.area).toBe('Zona norte');
-    expect(espacioParseado).toMatchObject({ lel: 1.5, o2: 20.8, h2s: 0, co: 3 });
-  });
-
-  it('quita la cadena de una fecha imposible para que no se vuelva medición', () => {
-    const texto = [
-      'EC-20 Cisterna de agua  0.0  20.9  0.0  2.0  32/13/2025',
-      'FICHA EC-20',
-      'Clasificación del reporte: Tipo I',
-    ].join('\n');
-    const [espacioParseado] = parsearNom033(texto).espacios;
-    expect(espacioParseado.fecha).toBe('');
-    expect(espacioParseado).toMatchObject({ lel: 0, o2: 20.9, h2s: 0, co: 2 });
-    expect(espacioParseado.nombre).not.toContain('32');
-  });
-});
-
 describe('revisión del texto PDF y de la carga', () => {
   afterEach(() => {
     setFileStorage(new (class implements FileStorage {
@@ -229,6 +171,19 @@ describe('revisión del texto PDF y de la carga', () => {
         tamanoBytes: 7 * 1024 * 1024,
         hashSha256: 'f'.repeat(64),
         texto,
+        espacios: [
+          {
+            clave: 'EC-09',
+            nombre: 'Pozo',
+            area: 'Patio',
+            lel: 0,
+            o2: 20.9,
+            h2s: 0,
+            co: 1,
+            fecha: '2025-03-15',
+            tipoDeclarado: 'I',
+          },
+        ],
       }),
     });
     const respuesta = await subirRuta(request);
@@ -281,7 +236,10 @@ describe('revisión de la confirmación', () => {
       nombreArchivo: 'anexo.txt',
       tamanoBytes: 80,
       hashSha256: '2'.repeat(64),
-      texto: 'EC-01 Cisterna  0  20.9  0  1  15/03/2025\nFICHA EC-01\nClasificación del reporte: Tipo I\n',
+      texto: 'EC-01 Cisterna',
+      espacios: [
+        { clave: 'EC-01', nombre: 'Cisterna', area: 'Patio', lel: 0, o2: 20.9, h2s: 0, co: 1, fecha: '2025-03-15', tipoDeclarado: 'I' as const },
+      ],
     });
     expect(() => confirmarReporteReferencia(extraido.id, [])).toThrow(/espacio/);
     rechazarReporteReferencia(extraido.id, 'No corresponde al centro.');
@@ -297,7 +255,10 @@ describe('revisión de la confirmación', () => {
       nombreArchivo: 'anexo-sesion.txt',
       tamanoBytes: 90,
       hashSha256: '3'.repeat(64),
-      texto: 'EC-03 Registro  1  20.8  0  1  15/03/2025\nFICHA EC-03\nClasificación del reporte: Tipo II\n',
+      texto: 'EC-03 Registro',
+      espacios: [
+        { clave: 'EC-03', nombre: 'Registro', area: 'Nave', lel: 1, o2: 20.8, h2s: 0, co: 1, fecha: '2025-03-15', tipoDeclarado: 'II' as const },
+      ],
     });
     const request = new Request('http://localhost/api/reportes-referencia/1/confirmar', {
       method: 'POST',

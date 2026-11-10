@@ -76,9 +76,9 @@ npm run dev
 5. Abre el estudio de prueba `EST-2026-0004` en `/estudios/4` y entra a **Comparar con referencia**.
 6. La vista se imprime con el botón del navegador. No se mete al dictamen oficial.
 
-El PDF se lee en el navegador con pdfjs-dist (`src/lib/pdf-cliente.ts`). Al API solo llega el texto extraído, el nombre, el tamaño y el SHA-256. Así un archivo de varios megabytes no choca con el tope de la petición. El servidor rechaza un texto que no quepa holgado en 4 MB.
+El PDF se lee en el navegador con pdfjs-dist (`src/lib/pdf-cliente.ts`). Ahí mismo se arman las filas del Anexo 1 con la coordenada X de cada columna (`src/lib/nom033-parser.ts`): se ignora el índice, el encabezado repetido y el pie «Página N de M», y un año no cuenta como medición. Al API llegan el texto, las filas ya leídas, el nombre, el tamaño y el SHA-256. El servidor vuelve a calcular el cumplimiento y no interpreta el texto plano. Un texto que no quepa holgado en 4 MB se rechaza.
 
-Solo un reporte en estado `CONFIRMADO` participa. `PENDIENTE`, `EXTRAIDO` y `RECHAZADO` no se comparan. Confirmar exige el estado `EXTRAIDO` y al menos un espacio; un `RECHAZADO` o un `PENDIENTE` no se confirman. El tipo escrito en la ficha y el tipo calculado con la medición se guardan por separado.
+Solo un reporte en estado `CONFIRMADO` participa. `PENDIENTE`, `EXTRAIDO` y `RECHAZADO` no se comparan. Confirmar exige el estado `EXTRAIDO` y al menos un espacio; un `RECHAZADO` o un `PENDIENTE` no se confirman. El tipo escrito en la Tabla 7 y el tipo calculado con la medición se guardan por separado. Si una fila no trae las cuatro mediciones o no aparece en la Tabla 7, queda marcada para revisión y no se inventa el dato.
 
 ### Deuda explícita (no se implementa en esta demo)
 

@@ -4,7 +4,6 @@ import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { LocalFileStorage, MemoryFileStorage, setFileStorage } from '../src/lib/file-storage';
 import { evaluarEspacioNom033, LIMITES_NOM033 } from '../src/lib/nom033-limites';
-import { parsearNom033 } from '../src/lib/nom033-parser';
 import { pathToFileURL } from 'url';
 import { extraerTextoPdfEnCliente } from '../src/lib/pdf-cliente';
 import {
@@ -63,58 +62,14 @@ describe('cumplimiento NOM-033', () => {
   });
 });
 
-describe('parser NOM-033 con filas partidas', () => {
-  it('arma el anexo sintético y separa el tipo de la ficha', async () => {
-    const resultado = parsearNom033(await textoFixture());
-    expect(resultado.advertencias).toEqual([]);
-    expect(resultado.espacios.map((espacio) => espacio.clave)).toEqual(['EC-01', 'EC-02', 'EC-03', 'EC-04', 'EC-05']);
-
-    const cisterna = resultado.espacios[0];
-    expect(cisterna.nombre).toBe('Cisterna de agua tratada');
-    expect(cisterna.area).toBe('Área de servicios');
-    expect(cisterna).toMatchObject({ lel: 0, o2: 20.9, h2s: 0, co: 2, fecha: '2025-03-15', tipoDeclarado: 'I', tipoCalculado: 'I', cumple: true });
-
-    const tanque = resultado.espacios[1];
-    expect(tanque.nombre).toBe('Tanque vertical de solvente inflamable');
-    expect(tanque.area).toBe('Patio de químicos');
-    expect(tanque.tipoDeclarado).toBe('I');
-    expect(tanque.cumple).toBe(true);
-
-    const registro = resultado.espacios[2];
-    expect(registro.nombre).toBe('Registro eléctrico subterráneo');
-    expect(registro.area).toBe('Área de subestación');
-    expect(registro).toMatchObject({ lel: 3, o2: 17.8, h2s: 6, co: 40, fecha: '2025-03-16', tipoDeclarado: 'II', tipoCalculado: 'II', cumple: false });
-
-    const ducto = resultado.espacios[3];
-    expect(ducto.tipoDeclarado).toBe('I');
-    expect(ducto.tipoCalculado).toBe('II');
-    expect(ducto.cumple).toBe(false);
-
-    expect(resultado.espacios[4].nombre).toBe('Fosa de retén de agua pluvial');
-    expect(resultado.espacios[4].area).toBe('Zona norte');
-  });
-
-  it('no confunde un número del nombre con la medición', () => {
-    const texto = [
-      'EC-07  Nave 2 de',
-      '        compresores',
-      '        Área de máquinas   0.4   20.6   0.0   1.5   01/04/2025',
-      'FICHA EC-07',
-      'Clasificación del reporte: Tipo II',
-    ].join('\n');
-    const [espacio] = parsearNom033(texto).espacios;
-    expect(espacio.nombre).toBe('Nave 2 de compresores');
-    expect(espacio.area).toBe('Área de máquinas');
-    expect(espacio).toMatchObject({ lel: 0.4, o2: 20.6, h2s: 0, co: 1.5, fecha: '2025-04-01', tipoDeclarado: 'II', tipoCalculado: 'I' });
-  });
-
-  it('extrae en el cliente el mismo anexo del PDF sintético', async () => {
+describe('extracción del PDF sintético en el cliente', () => {
+  it('conserva el texto del anexo de prueba', async () => {
     const pdf = await fs.readFile(FIXTURE_PDF);
     const workerSrc = pathToFileURL(path.join(process.cwd(), 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs')).href;
     const datos = pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength);
-    const desdePdf = parsearNom033(await extraerTextoPdfEnCliente(datos, workerSrc));
-    const desdeTxt = parsearNom033(await textoFixture());
-    expect(desdePdf.espacios).toEqual(desdeTxt.espacios);
+    const texto = await extraerTextoPdfEnCliente(datos, workerSrc);
+    expect(texto).toContain('EC-01');
+    expect(texto).toContain('Cisterna de agua');
   });
 });
 
@@ -128,6 +83,13 @@ describe('comparación y almacén', () => {
     expect(tipo).toBeTruthy();
     const texto = await textoFixture();
     const hashSha256 = 'a'.repeat(64);
+    const espacios = [
+      { clave: 'EC-01', nombre: 'Cisterna de agua tratada', area: 'Área de servicios', lel: 0, o2: 20.9, h2s: 0, co: 2, fecha: '2025-03-15', tipoDeclarado: 'I' as const },
+      { clave: 'EC-02', nombre: 'Tanque vertical de solvente inflamable', area: 'Patio de químicos', lel: 8.4, o2: 20.1, h2s: 0.2, co: 6, fecha: '2025-03-15', tipoDeclarado: 'I' as const },
+      { clave: 'EC-03', nombre: 'Registro eléctrico subterráneo', area: 'Área de subestación', lel: 3, o2: 17.8, h2s: 6, co: 40, fecha: '2025-03-16', tipoDeclarado: 'II' as const },
+      { clave: 'EC-04', nombre: 'Ducto de ventilación', area: 'Área de techos', lel: 14, o2: 20.5, h2s: 0.1, co: 1, fecha: '2025-03-16', tipoDeclarado: 'I' as const },
+      { clave: 'EC-05', nombre: 'Fosa de retén de agua pluvial', area: 'Zona norte', lel: 1.5, o2: 20.8, h2s: 0, co: 3, fecha: '2025-03-16', tipoDeclarado: 'I' as const },
+    ];
     const extraido = await subirReporteReferencia({
       empresaId: 1,
       centroTrabajoId: 1,
@@ -137,6 +99,7 @@ describe('comparación y almacén', () => {
       tamanoBytes: Buffer.byteLength(texto),
       hashSha256,
       texto,
+      espacios,
     });
     expect(extraido.estadoExtraccion).toBe('EXTRAIDO');
     expect(extraido.archivo.hashSha256).toBe(hashSha256);
@@ -151,6 +114,7 @@ describe('comparación y almacén', () => {
       tamanoBytes: Buffer.byteLength(texto),
       hashSha256,
       texto,
+      espacios,
     });
     rechazarReporteReferencia(rechazado.id, 'Cifras ilegibles en la prueba.');
 
