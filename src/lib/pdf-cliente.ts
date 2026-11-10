@@ -1,3 +1,4 @@
+import './promesa-with-resolvers';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import { agruparItemsPorRenglon, ItemTexto } from './pdf-renglones';
 
