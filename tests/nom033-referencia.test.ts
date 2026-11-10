@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { LocalFileStorage, MemoryFileStorage, setFileStorage } from '../src/lib/file-storage';
 import { evaluarEspacioNom033, LIMITES_NOM033 } from '../src/lib/nom033-limites';
 import { parsearNom033 } from '../src/lib/nom033-parser';
-import { extraerTextoPdf } from '../src/lib/pdf-text';
+import { pathToFileURL } from 'url';
+import { extraerTextoPdfEnCliente } from '../src/lib/pdf-cliente';
 import {
   compararEstudioConReferencia,
   confirmarReporteReferencia,
@@ -107,9 +108,11 @@ describe('parser NOM-033 con filas partidas', () => {
     expect(espacio).toMatchObject({ lel: 0.4, o2: 20.6, h2s: 0, co: 1.5, fecha: '2025-04-01', tipoDeclarado: 'II', tipoCalculado: 'I' });
   });
 
-  it('lee el mismo anexo desde el PDF sintético', async () => {
+  it('extrae en el cliente el mismo anexo del PDF sintético', async () => {
     const pdf = await fs.readFile(FIXTURE_PDF);
-    const desdePdf = parsearNom033(await extraerTextoPdf(pdf));
+    const workerSrc = pathToFileURL(path.join(process.cwd(), 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs')).href;
+    const datos = pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength);
+    const desdePdf = parsearNom033(await extraerTextoPdfEnCliente(datos, workerSrc));
     const desdeTxt = parsearNom033(await textoFixture());
     expect(desdePdf.espacios).toEqual(desdeTxt.espacios);
   });
@@ -123,18 +126,21 @@ describe('comparación y almacén', () => {
   it('solo compara un reporte confirmado y marca altas, bajas y cambios', async () => {
     const tipo = store.getTiposEstudio().find((item) => item.claveNOM === 'NOM-033-STPS-2015');
     expect(tipo).toBeTruthy();
-    const contenido = Buffer.from(await textoFixture(), 'utf8');
+    const texto = await textoFixture();
+    const hashSha256 = 'a'.repeat(64);
     const extraido = await subirReporteReferencia({
       empresaId: 1,
       centroTrabajoId: 1,
       tipoEstudioId: tipo!.id,
       fecha: '2025-03-15',
       nombreArchivo: 'anexo-sintetico.txt',
-      contenido,
+      tamanoBytes: Buffer.byteLength(texto),
+      hashSha256,
+      texto,
     });
     expect(extraido.estadoExtraccion).toBe('EXTRAIDO');
-    expect(extraido.archivo.hashSha256).toHaveLength(64);
-    expect(extraido.archivo.tamanoBytes).toBe(contenido.length);
+    expect(extraido.archivo.hashSha256).toBe(hashSha256);
+    expect(extraido.archivo.tamanoBytes).toBe(Buffer.byteLength(texto));
 
     const rechazado = await subirReporteReferencia({
       empresaId: 1,
@@ -142,7 +148,9 @@ describe('comparación y almacén', () => {
       tipoEstudioId: tipo!.id,
       fecha: '2025-01-01',
       nombreArchivo: 'otro.txt',
-      contenido,
+      tamanoBytes: Buffer.byteLength(texto),
+      hashSha256,
+      texto,
     });
     rechazarReporteReferencia(rechazado.id, 'Cifras ilegibles en la prueba.');
 

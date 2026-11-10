@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/Sidebar';
 import { Navbar } from '@/components/Navbar';
+import { extraerTextoPdfEnCliente, sha256Hex, validarPdfCliente } from '@/lib/pdf-cliente';
+import { interpretarRespuesta } from '@/lib/respuesta-http';
 import { CentroTrabajo, TipoEstudio } from '@/lib/types';
 import { ArrowLeft } from 'lucide-react';
 
@@ -42,18 +44,38 @@ export default function NuevoReporteReferenciaPage() {
     setEnviando(true);
     setError(null);
     try {
-      const form = new FormData();
-      form.set('empresaId', '1');
-      form.set('centroTrabajoId', String(centroTrabajoId));
-      form.set('tipoEstudioId', String(tipoEstudioId));
-      form.set('fecha', fecha);
-      form.set('archivo', archivo);
-      const respuesta = await fetch('/api/reportes-referencia', { method: 'POST', body: form });
-      const data = await respuesta.json();
-      if (!respuesta.ok) throw new Error(data.error || 'No se pudo subir el archivo');
+      const buffer = await archivo.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const esPdf = archivo.name.toLowerCase().endsWith('.pdf');
+      if (esPdf) {
+        const motivo = validarPdfCliente(bytes, archivo.size);
+        if (motivo) throw new Error(motivo);
+      } else if (archivo.size > 50 * 1024 * 1024) {
+        throw new Error('El archivo supera el máximo de 50 MB.');
+      }
+      const texto = esPdf ? await extraerTextoPdfEnCliente(buffer) : new TextDecoder().decode(buffer).replace(/^\uFEFF/, '');
+      const hashSha256 = await sha256Hex(buffer);
+      const respuesta = await fetch('/api/reportes-referencia', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          empresaId: 1,
+          centroTrabajoId: Number(centroTrabajoId),
+          tipoEstudioId: Number(tipoEstudioId),
+          fecha,
+          nombreArchivo: archivo.name,
+          tamanoBytes: archivo.size,
+          hashSha256,
+          texto,
+        }),
+      });
+      const crudo = await respuesta.text();
+      const interpretada = interpretarRespuesta(respuesta.status, crudo);
+      if (!interpretada.ok) throw new Error(interpretada.mensaje);
+      const data = interpretada.datos as { id: number };
       router.push(`/reportes-referencia/${data.id}`);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'No se pudo leer el reporte.');
       setEnviando(false);
     }
   };
@@ -62,14 +84,15 @@ export default function NuevoReporteReferenciaPage() {
     <div className="app-container">
       <Sidebar />
       <div className="main-content">
-        <Navbar titulo="Subir reporte anterior" subtitulo="NOM-033-STPS-2015 · el texto se lee en el servidor, sin modelo de lenguaje" />
+        <Navbar titulo="Subir reporte anterior" subtitulo="NOM-033-STPS-2015 · el texto del PDF se lee en este navegador" />
         <main className="page-body">
           <Link href="/reportes-referencia" className="btn btn-secondary" style={{ marginBottom: '1rem' }}>
             <ArrowLeft size={16} /> Volver
           </Link>
           <form className="card" onSubmit={enviar}>
             <p style={{ marginTop: 0 }}>
-              Para probar en local, descarga el{' '}
+              El PDF se abre en este navegador. Al servidor solo se envían el texto y los datos del archivo
+              (nombre, tamaño y SHA-256), para no rebasar el límite de la petición. Para probar en local, descarga el{' '}
               <a href="/fixtures/nom033-anexo-sintetico.pdf" download>
                 PDF sintético
               </a>
@@ -134,7 +157,7 @@ export default function NuevoReporteReferenciaPage() {
               />
             </div>
             <button className="btn btn-primary" type="submit" disabled={enviando}>
-              {enviando ? 'Leyendo archivo…' : 'Subir y extraer'}
+              {enviando ? 'Leyendo el PDF en el navegador…' : 'Subir y extraer'}
             </button>
           </form>
         </main>

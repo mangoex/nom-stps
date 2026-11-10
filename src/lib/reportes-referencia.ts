@@ -10,7 +10,6 @@ import {
 } from './nom033-limites';
 import { compararEspaciosNom033, espaciosDesdeCaptura, ResultadoComparacion } from './nom033-comparacion';
 import { parsearNom033 } from './nom033-parser';
-import { extraerTextoPdf } from './pdf-text';
 import { getFileStorage } from './file-storage';
 import { getCurrentUser } from './auth';
 import { store } from './store';
@@ -32,16 +31,20 @@ export interface AltaReporteReferencia {
   tipoEstudioId: number;
   fecha: string;
   nombreArchivo: string;
-  contenido: Buffer;
+  tamanoBytes: number;
+  hashSha256: string;
+  texto: string;
   usuarioId?: number;
 }
 
-const MAX_BYTES_DEFAULT = 20 * 1024 * 1024;
+/** El JSON debe caber holgado bajo el tope de ~4.5 MB por petición de las funciones. */
+export const MAX_BYTES_TEXTO_REPORTE = 3 * 1024 * 1024;
+export const MAX_BYTES_ORIGINAL = 50 * 1024 * 1024;
 
-export function limiteBytesReporte(): number {
-  const configurado = Number(process.env.REPORTE_MAX_BYTES);
+export function limiteBytesTextoReporte(): number {
+  const configurado = Number(process.env.REPORTE_MAX_TEXTO_BYTES);
   if (Number.isFinite(configurado) && configurado > 0) return configurado;
-  return MAX_BYTES_DEFAULT;
+  return MAX_BYTES_TEXTO_REPORTE;
 }
 
 export function resolverUsuarioId(request?: Request, usuarioIdBody?: unknown): number {
@@ -54,7 +57,7 @@ export function resolverUsuarioId(request?: Request, usuarioIdBody?: unknown): n
 }
 
 export async function subirReporteReferencia(input: AltaReporteReferencia): Promise<ReporteReferencia> {
-  validarArchivoAntesDeGuardar(input.nombreArchivo, input.contenido);
+  validarTextoAntesDeGuardar(input);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.fecha)) {
     throw new ReferenciaError('REF-FECHA', 'La fecha del reporte debe ir en formato AAAA-MM-DD.');
   }
@@ -69,14 +72,13 @@ export async function subirReporteReferencia(input: AltaReporteReferencia): Prom
   }
 
   const archivo = await getFileStorage().guardar({
-    nombre: input.nombreArchivo,
-    contenido: input.contenido,
+    nombre: `${input.nombreArchivo}.txt`,
+    contenido: Buffer.from(input.texto, 'utf8'),
   });
 
   const esNom033 = tipo.claveNOM === 'NOM-033-STPS-2015';
-  const texto = await textoDelArchivo(input.nombreArchivo, input.contenido);
   const parseo = esNom033
-    ? parsearNom033(texto)
+    ? parsearNom033(input.texto)
     : {
         espacios: [] as EspacioNom033[],
         advertencias: ['Este extractor solo reconoce el anexo y las fichas de NOM-033-STPS-2015.'],
@@ -89,9 +91,9 @@ export async function subirReporteReferencia(input: AltaReporteReferencia): Prom
       tipoEstudioId: input.tipoEstudioId,
       fecha: input.fecha,
       archivo: {
-        nombre: archivo.nombre,
-        hashSha256: archivo.hashSha256,
-        tamanoBytes: archivo.tamanoBytes,
+        nombre: pathBasename(input.nombreArchivo),
+        hashSha256: input.hashSha256.toLowerCase(),
+        tamanoBytes: input.tamanoBytes,
         storageKey: archivo.key,
       },
       estadoExtraccion: parseo.espacios.length ? 'EXTRAIDO' : 'PENDIENTE',
@@ -243,32 +245,29 @@ function normalizarEntradas(entradas: EntradaEspacioNom033[]): EspacioNom033[] {
   });
 }
 
-function validarArchivoAntesDeGuardar(nombre: string, contenido: Buffer): void {
-  if (!contenido.length) {
-    throw new ReferenciaError('REF-ARCHIVO', 'El archivo está vacío.');
+function validarTextoAntesDeGuardar(input: AltaReporteReferencia): void {
+  if (!input.nombreArchivo || !input.nombreArchivo.trim()) {
+    throw new ReferenciaError('REF-ARCHIVO', 'Falta el nombre del archivo.');
   }
-  if (contenido.length > limiteBytesReporte()) {
+  if (!Number.isInteger(input.tamanoBytes) || input.tamanoBytes < 1 || input.tamanoBytes > MAX_BYTES_ORIGINAL) {
+    throw new ReferenciaError('REF-ARCHIVO', 'El tamaño del archivo original debe ser de 1 byte a 50 MB.');
+  }
+  if (!/^[a-f0-9]{64}$/i.test(input.hashSha256 || '')) {
+    throw new ReferenciaError('REF-ARCHIVO', 'Falta el SHA-256 del archivo original.');
+  }
+  if (typeof input.texto !== 'string') {
+    throw new ReferenciaError('REF-TEXTO', 'Falta el texto extraído del reporte.');
+  }
+  const bytes = Buffer.byteLength(input.texto, 'utf8');
+  if (bytes > limiteBytesTextoReporte()) {
     throw new ReferenciaError(
-      'REF-ARCHIVO',
-      `El archivo supera el tamaño máximo de ${limiteBytesReporte()} bytes.`
+      'REF-TEXTO',
+      `El texto extraído supera ${limiteBytesTextoReporte()} bytes y no cabe holgado en una petición de 4 MB.`
     );
-  }
-  const lower = nombre.toLowerCase();
-  if (lower.endsWith('.pdf')) {
-    const firma = contenido.subarray(0, 5).toString('latin1');
-    if (!firma.startsWith('%PDF-')) {
-      throw new ReferenciaError('REF-ARCHIVO', 'El archivo no tiene la firma de un PDF (%PDF-).');
-    }
-    return;
-  }
-  if (!lower.endsWith('.txt')) {
-    throw new ReferenciaError('REF-ARCHIVO', 'Solo se aceptan archivos PDF o TXT.');
   }
 }
 
-async function textoDelArchivo(nombre: string, contenido: Buffer): Promise<string> {
-  const lower = nombre.toLowerCase();
-  if (lower.endsWith('.pdf')) return extraerTextoPdf(contenido);
-  if (lower.endsWith('.txt')) return contenido.toString('utf8').replace(/^\uFEFF/, '');
-  throw new ReferenciaError('REF-ARCHIVO', 'Solo se aceptan archivos PDF o TXT.');
+function pathBasename(nombre: string): string {
+  const partes = nombre.split(/[/\\]/);
+  return partes[partes.length - 1] || 'reporte';
 }

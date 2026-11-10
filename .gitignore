@@ -36,3 +36,6 @@ data/
 
 # Salidas del navegador de verificación
 .playwright-mcp/
+
+# Worker de pdf.js, se copia desde node_modules al arrancar Next
+public/pdf.worker.min.mjs
