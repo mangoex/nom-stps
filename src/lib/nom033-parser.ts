@@ -1,4 +1,5 @@
 import { evaluarEspacioNom033, normalizarClaveEspacio, normalizarFechaMedicion, numeroFlexible } from './nom033-limites';
+import { FragmentoPdf, agruparEnRenglones, RenglonPdf } from './pdf-renglones';
 import { EspacioNom033, TipoEspacioConfinado } from './types';
 
 export interface ResultadoParserNom033 {
@@ -6,95 +7,67 @@ export interface ResultadoParserNom033 {
   advertencias: string[];
 }
 
-const PREFIJO_AREA = /^(area|zona|patio|nave|subestacion|anden)\b/i;
+const ANCHO_CLAVE_ANEXO = { min: 200, max: 268 };
+const ANCHO_CLAVE_TABLA = { min: 350, max: 430 };
+const ANCHO_TIPO = { min: 440, max: 490 };
+const ANCHO_AREA = { min: 115, max: 180 };
+const ANCHO_NOMBRE = { min: 180, max: 230 };
+// Algunas filas corren ~18 px a la izquierda. Los cortes quedan entre las dos
+// posiciones (la normal y la corrida) para no mezclar LEL con O2 ni CO con la fecha.
+const ANCHO_LEL = { min: 262, max: 312 };
+const ANCHO_O2 = { min: 312, max: 360 };
+const ANCHO_H2S = { min: 360, max: 415 };
+const ANCHO_CO = { min: 415, max: 468 };
+const ANCHO_FECHA = { min: 468, max: 560 };
 
 /**
- * Lee el texto de un PDF (pdftotext -layout o el extractor del servidor)
- * y arma las filas del Anexo 1 más el tipo declarado en las fichas.
- * Tolera que una fila venga partida en dos o tres líneas.
- * No usa un modelo de lenguaje: claves, fechas y tokens de medición
- * (número, <LD, N/D o una cota como <0.1). Un entero pegado al nombre,
- * como "Nave 2", no cuenta como columna.
+ * Arma el Anexo 1 a partir de los fragmentos con coordenada X que entrega pdfjs.
+ * Solo lee la tabla (encabezado Núm + Explosividad), no el índice.
+ * El tipo escrito sale de la Tabla 7 y no se sustituye por el calculado.
  */
-export function parsearNom033(texto: string): ResultadoParserNom033 {
-  const tipos = extraerTiposDeFichas(texto);
+export function parsearNom033(paginas: FragmentoPdf[][]): ResultadoParserNom033 {
+  const tipos = new Map<string, TipoEspacioConfinado>();
+  const mediciones = new Map<string, MedicionCruda>();
   const advertencias: string[] = [];
-  const espacios: EspacioNom033[] = [];
-  const vistos = new Set<string>();
 
-  for (const bloque of bloquesDeAnexo(texto)) {
-    const fila = interpretarBloque(bloque);
-    if (!fila) continue;
-    if (vistos.has(fila.clave)) {
-      advertencias.push(`${fila.clave} aparece más de una vez en el anexo; se conserva la primera.`);
-      continue;
+  paginas.forEach((fragmentos, indice) => {
+    const renglones = agruparEnRenglones(fragmentos).filter((renglon) => !esDescartable(renglon));
+    if (esPaginaAnexo(fragmentos)) {
+      leerAnexo(renglones, indice + 1, mediciones, advertencias);
+      return;
     }
-    vistos.add(fila.clave);
+    if (esPaginaTabla7(fragmentos)) {
+      leerTabla7(renglones, tipos);
+    }
+  });
 
-    const tipoDeclarado = tipos.get(fila.clave) ?? null;
-    if (!tipoDeclarado) {
-      advertencias.push(`${fila.clave} no tiene ficha con Tipo I o Tipo II.`);
-    }
-    if (fila.incompleto) {
-      advertencias.push(`${fila.clave} no trae los cuatro valores (LEL, O2, H2S y CO).`);
-    }
-    if (fila.fechaCruda && !fila.fecha) {
-      advertencias.push(`${fila.clave} trae una fecha que no se pudo leer (${fila.fechaCruda}).`);
-    }
-
-    espacios.push(
-      evaluarEspacioNom033({
-        clave: fila.clave,
-        nombre: fila.nombre,
-        area: fila.area,
-        lel: fila.lel,
-        o2: fila.o2,
-        h2s: fila.h2s,
-        co: fila.co,
-        fecha: fila.fecha,
+  const espacios = Array.from(mediciones.values())
+    .sort((a, b) => numeroClave(a.clave) - numeroClave(b.clave))
+    .map((medicion) => {
+      const tipoDeclarado = tipos.get(medicion.clave) ?? null;
+      if (!tipoDeclarado) {
+        advertencias.push(`${medicion.clave} no tiene tipo en la tabla de clasificación.`);
+      }
+      if (medicion.incompleta) {
+        advertencias.push(`${medicion.clave} quedó incompleta y se marca para revisión humana.`);
+      }
+      return evaluarEspacioNom033({
+        clave: medicion.clave,
+        nombre: medicion.nombre,
+        area: medicion.area,
+        lel: medicion.lel,
+        o2: medicion.o2,
+        h2s: medicion.h2s,
+        co: medicion.co,
+        fecha: medicion.fecha,
         tipoDeclarado,
-      })
-    );
-  }
+      });
+    });
 
   return { espacios, advertencias };
 }
 
-function bloquesDeAnexo(texto: string): string[][] {
-  const bloques: string[][] = [];
-  let actual: string[] | null = null;
-
-  for (const cruda of texto.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')) {
-    const linea = cruda.trim();
-    if (!linea) continue;
-    if (/^\s*FICHAS?\b/i.test(linea)) {
-      if (actual) bloques.push(actual);
-      actual = null;
-      continue;
-    }
-    if (/^\s*EC\s*-\s*\d+[A-Z]?\b/i.test(linea)) {
-      if (actual) bloques.push(actual);
-      actual = [linea];
-      continue;
-    }
-    if (!actual || esEncabezado(linea) || esPieDePagina(linea)) continue;
-    actual.push(linea);
-  }
-
-  if (actual) bloques.push(actual);
-  return bloques;
-}
-
-function esEncabezado(linea: string): boolean {
-  return /clave/i.test(linea) && /lel/i.test(linea) && /o2/i.test(linea);
-}
-
-function esPieDePagina(linea: string): boolean {
-  const plano = sinAcentos(linea);
-  return /^pagina\s+\d+\s+de\s+\d+$/i.test(plano) || /^pag\.?\s*\d+(\s+de\s+\d+)?$/i.test(plano);
-}
-
-function interpretarBloque(bloque: string[]): {
+interface MedicionCruda {
   clave: string;
   nombre: string;
   area: string;
@@ -103,147 +76,146 @@ function interpretarBloque(bloque: string[]): {
   h2s: number | null;
   co: number | null;
   fecha: string;
-  fechaCruda: string;
-  incompleto: boolean;
-} | null {
-  const claveMatch = bloque[0].match(/^\s*(EC\s*-\s*\d+[A-Z]?)\b/i);
-  if (!claveMatch) return null;
-  const clave = normalizarClaveEspacio(claveMatch[1]);
-
-  let fecha = '';
-  let fechaCruda = '';
-  const sinClaveNiFecha = bloque.map((linea, indice) => {
-    const sinClave = indice === 0 ? linea.replace(/^\s*EC\s*-\s*\d+[A-Z]?\b/i, ' ') : linea;
-    const separada = quitarUltimaFecha(sinClave);
-    if (separada.fecha) {
-      fecha = separada.fecha;
-      fechaCruda = separada.cruda;
-    } else if (separada.cruda) {
-      fechaCruda = separada.cruda;
-    }
-    return separada.linea;
-  });
-
-  const { textos, numeros, incompleto, lineaUltimoValor } = tomarUltimosNumeros(sinClaveNiFecha);
-  const nombrePartes: string[] = [];
-  const areaPartes: string[] = [];
-  const valoresAlFinal = lineaUltimoValor !== 0;
-
-  textos.forEach((textoLinea, indice) => {
-    if (!textoLinea) return;
-    const esLineaDeValores = valoresAlFinal && indice === lineaUltimoValor;
-    const esPrefijoArea = indice !== 0 && PREFIJO_AREA.test(sinAcentos(textoLinea));
-    if (esLineaDeValores || esPrefijoArea) areaPartes.push(textoLinea);
-    else nombrePartes.push(textoLinea);
-  });
-
-  const [lel, o2, h2s, co] = [numeros[0] ?? null, numeros[1] ?? null, numeros[2] ?? null, numeros[3] ?? null];
-
-  return {
-    clave,
-    nombre: nombrePartes.join(' ').replace(/\s+/g, ' ').trim(),
-    area: areaPartes.join(' ').replace(/\s+/g, ' ').trim(),
-    lel,
-    o2,
-    h2s,
-    co,
-    fecha,
-    fechaCruda,
-    incompleto,
-  };
+  incompleta: boolean;
 }
 
-function quitarUltimaFecha(linea: string): { linea: string; fecha: string; cruda: string } {
-  const fechaRe = /\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}/g;
-  const coincidencias: RegExpExecArray[] = [];
-  let coincidencia = fechaRe.exec(linea);
-  while (coincidencia) {
-    coincidencias.push(coincidencia);
-    coincidencia = fechaRe.exec(linea);
+function leerAnexo(
+  renglones: RenglonPdf[],
+  pagina: number,
+  mediciones: Map<string, MedicionCruda>,
+  advertencias: string[]
+): void {
+  const indices = renglones
+    .map((renglon, indice) => (claveEn(renglon, ANCHO_CLAVE_ANEXO) ? indice : -1))
+    .filter((indice) => indice >= 0);
+
+  indices.forEach((inicio, orden) => {
+    const clave = claveEn(renglones[inicio], ANCHO_CLAVE_ANEXO);
+    if (!clave) return;
+    const fin = orden + 1 < indices.length ? indices[orden + 1] : renglones.length;
+    const partes = renglones.slice(inicio, fin).flatMap((renglon) => renglon.partes);
+    if (mediciones.has(clave)) {
+      advertencias.push(`${clave} se repite en la página ${pagina}; se conserva la primera fila completa.`);
+      return;
+    }
+    const lel = numeroEnBanda(partes, ANCHO_LEL, (valor) => valor >= 0 && valor <= 100);
+    const o2 = numeroEnBanda(partes, ANCHO_O2, (valor) => valor >= 0 && valor <= 100);
+    const h2s = numeroEnBanda(partes, ANCHO_H2S, (valor) => valor >= 0 && valor < 1000);
+    const co = numeroEnBanda(partes, ANCHO_CO, (valor) => valor >= 0 && valor < 1000);
+    const fecha = fechaEnBanda(partes);
+    const incompleta = lel == null || o2 == null || h2s == null || co == null || !fecha;
+    mediciones.set(clave, {
+      clave,
+      area: textoEn(partes, ANCHO_AREA),
+      nombre: textoEn(partes, ANCHO_NOMBRE),
+      lel,
+      o2,
+      h2s,
+      co,
+      fecha,
+      incompleta,
+    });
+  });
+}
+
+function leerTabla7(renglones: RenglonPdf[], tipos: Map<string, TipoEspacioConfinado>): void {
+  for (const renglon of renglones) {
+    const clave = claveEn(renglon, ANCHO_CLAVE_TABLA);
+    const tipo = tipoEn(renglon);
+    if (!clave || !tipo || tipos.has(clave)) continue;
+    tipos.set(clave, tipo);
   }
-  if (coincidencias.length === 0) return { linea, fecha: '', cruda: '' };
-  const ultima = coincidencias[coincidencias.length - 1];
-  const inicio = ultima.index ?? 0;
-  const cruda = ultima[0];
-  const fecha = normalizarFechaMedicion(cruda);
-  return {
-    linea: `${linea.slice(0, inicio)} ${linea.slice(inicio + cruda.length)}`,
-    fecha,
-    cruda,
-  };
 }
 
-function tomarUltimosNumeros(lineas: string[]): {
-  textos: string[];
-  numeros: (number | null)[];
-  incompleto: boolean;
-  lineaUltimoValor: number;
-} {
-  const tokens: { linea: number; inicio: number; fin: number; valor: number | null }[] = [];
-  const re = /<\s*LD\b|N\/D|N\.D\.|\bND\b|<\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?/gi;
-  lineas.forEach((linea, indice) => {
-    const busqueda = new RegExp(re.source, 'gi');
-    let match = busqueda.exec(linea);
-    while (match) {
-      const texto = match[0];
-      const enteroDeNombre = /^\d+$/.test(texto) && /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]\s*$/.test(linea.slice(0, match.index));
-      if (!enteroDeNombre) {
-        tokens.push({
-          linea: indice,
-          inicio: match.index,
-          fin: match.index + texto.length,
-          valor: valorDeToken(texto),
-        });
-      }
-      match = busqueda.exec(linea);
-    }
-  });
-
-  const usados = tokens.length > 4 ? tokens.slice(tokens.length - 4) : tokens;
-  const textos = lineas.map((linea, indice) => {
-    const deEstaLinea = usados.filter((token) => token.linea === indice).sort((a, b) => b.inicio - a.inicio);
-    let salida = linea;
-    for (const token of deEstaLinea) {
-      salida = `${salida.slice(0, token.inicio)} ${salida.slice(token.fin)}`;
-    }
-    return salida.replace(/\s+/g, ' ').trim();
-  });
-
-  return {
-    textos,
-    numeros: usados.map((token) => token.valor),
-    incompleto: tokens.length < 4,
-    lineaUltimoValor: usados.length ? usados[usados.length - 1].linea : 0,
-  };
+function esPaginaAnexo(fragmentos: FragmentoPdf[]): boolean {
+  const explosividad = fragmentos.some(
+    (fragmento) => /explosividad/i.test(fragmento.texto) && fragmento.x > 250 && fragmento.x < 400
+  );
+  const numero = fragmentos.some((fragmento) => /^n[uú]m\.?$/i.test(fragmento.texto) && fragmento.x < 160);
+  return explosividad && numero;
 }
 
-function valorDeToken(texto: string): number | null {
-  return numeroFlexible(texto);
+function esPaginaTabla7(fragmentos: FragmentoPdf[]): boolean {
+  if (esPaginaAnexo(fragmentos)) return false;
+  if (fragmentos.some((fragmento) => /categorizaci[oó]n/i.test(fragmento.texto))) return true;
+  if (fragmentos.some((fragmento) => /tabla\s*7/i.test(fragmento.texto))) return true;
+  const tipo = fragmentos.some((fragmento) => /^tipo$/i.test(fragmento.texto.trim()) && fragmento.x > 420);
+  const numero = fragmentos.some((fragmento) => /^no\.?$/i.test(fragmento.texto.trim()) && fragmento.x < 100);
+  return tipo && numero;
 }
 
-function extraerTiposDeFichas(texto: string): Map<string, TipoEspacioConfinado> {
-  const mapa = new Map<string, TipoEspacioConfinado>();
-  const re = /FICHA\b([\s\S]*?)(?=FICHA\b|$)/gi;
-  let match = re.exec(texto);
-  while (match) {
-    const cuerpo = match[1] ?? '';
-    const clave = cuerpo.match(/EC\s*-\s*\d+[A-Z]?/i);
-    const tipo = cuerpo.match(/Tipo\s+(II|I)\b/i);
-    if (clave && tipo) {
-      mapa.set(normalizarClaveEspacio(clave[0]), tipo[1].toUpperCase() === 'II' ? 'II' : 'I');
-    }
-    match = re.exec(texto);
+function esDescartable(renglon: RenglonPdf): boolean {
+  const texto = renglon.partes.map((parte) => parte.texto).join(' ');
+  if (/p[aá]gina\s+\d+\s+de\s+\d+/i.test(texto)) return true;
+  if (/nom-033/i.test(texto) && /20\d{2}/.test(texto)) return true;
+  if (/^(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+20\d{2}$/i.test(texto.trim())) {
+    return true;
   }
-  return mapa;
+  if (renglon.partes.some((parte) => /explosividad|categorizaci[oó]n/i.test(parte.texto))) return true;
+  if (
+    renglon.partes.some((parte) => /^n[uú]m\.?$/i.test(parte.texto)) &&
+    renglon.partes.some((parte) => /^[aá]rea$/i.test(parte.texto))
+  ) {
+    return true;
+  }
+  return false;
 }
 
-function sinAcentos(valor: string): string {
-  return valor
-    .replace(/[áàäÁÀÄ]/g, 'a')
-    .replace(/[éèëÉÈË]/g, 'e')
-    .replace(/[íìïÍÌÏ]/g, 'i')
-    .replace(/[óòöÓÒÖ]/g, 'o')
-    .replace(/[úùüÚÙÜ]/g, 'u')
-    .replace(/ñ/g, 'n')
-    .replace(/Ñ/g, 'n');
+function claveEn(renglon: RenglonPdf, banda: { min: number; max: number }): string | null {
+  const tokens = renglon.partes.filter((parte) => parte.x >= banda.min && parte.x < banda.max);
+  const junto = tokens.map((parte) => parte.texto).join('');
+  const coincidencia = junto.match(/EC-(\d+)/i);
+  if (!coincidencia) return null;
+  const numero = Number(coincidencia[1]);
+  if (!Number.isInteger(numero) || numero < 1 || numero > 999) return null;
+  return normalizarClaveEspacio(`EC-${numero}`);
+}
+
+function tipoEn(renglon: RenglonPdf): TipoEspacioConfinado | null {
+  const token = renglon.partes.find(
+    (parte) => parte.x >= ANCHO_TIPO.min && parte.x < ANCHO_TIPO.max && /^[12]$/.test(parte.texto)
+  );
+  if (!token) return null;
+  return token.texto === '1' ? 'I' : 'II';
+}
+
+function numeroEnBanda(
+  partes: FragmentoPdf[],
+  banda: { min: number; max: number },
+  acepta: (valor: number) => boolean
+): number | null {
+  const valores = partes
+    .filter((parte) => parte.x >= banda.min && parte.x < banda.max)
+    .map((parte) => numeroFlexible(parte.texto))
+    .filter((valor): valor is number => valor != null && acepta(valor));
+  if (valores.length === 0) return null;
+  const primero = valores[0];
+  if (valores.some((valor) => valor !== primero)) return null;
+  return primero;
+}
+
+function fechaEnBanda(partes: FragmentoPdf[]): string {
+  const crudo = partes
+    .filter((parte) => parte.x >= ANCHO_FECHA.min && parte.x < ANCHO_FECHA.max)
+    .map((parte) => parte.texto)
+    .join('');
+  const coincidencia = crudo.match(/(\d{1,2})-(\d{1,2})-(\d{4})/);
+  if (!coincidencia) return '';
+  return normalizarFechaMedicion(`${coincidencia[1]}-${coincidencia[2]}-${coincidencia[3]}`);
+}
+
+function textoEn(partes: FragmentoPdf[], banda: { min: number; max: number }): string {
+  return partes
+    .filter((parte) => parte.x >= banda.min && parte.x < banda.max)
+    .filter((parte) => !/^EC-?$/i.test(parte.texto) && parte.texto !== '-')
+    .sort((a, b) => b.y - a.y || a.x - b.x)
+    .map((parte) => parte.texto)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function numeroClave(clave: string): number {
+  const coincidencia = clave.match(/(\d+)/);
+  return coincidencia ? Number(coincidencia[1]) : 0;
 }

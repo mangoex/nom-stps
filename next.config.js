@@ -11,9 +11,6 @@ if (fs.existsSync(workerOrigen)) {
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['pdfjs-dist'],
-  experimental: {
-    serverComponentsExternalPackages: ['unpdf'],
-  },
   webpack: (config) => {
     config.resolve.alias.canvas = false;
     config.resolve.alias.encoding = false;

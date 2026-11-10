@@ -1,6 +1,6 @@
 import './promesa-with-resolvers';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
-import { agruparItemsPorRenglon, ItemTexto } from './pdf-renglones';
+import { agruparItemsPorRenglon, FragmentoPdf, fragmentosDesdeItems, ItemTexto } from './pdf-renglones';
 
 export const MAX_BYTES_PDF_CLIENTE = 50 * 1024 * 1024;
 export const WORKER_PDF_PUBLICO = '/pdf.worker.min.mjs';
@@ -31,17 +31,35 @@ export async function sha256Hex(datos: ArrayBuffer): Promise<string> {
  * Lee el texto en el navegador con pdfjs-dist y la misma agrupación de renglones
  * que usa el servidor. El worker se sirve desde public/pdf.worker.min.mjs.
  */
-export async function extraerTextoPdfEnCliente(datos: ArrayBuffer, workerSrc?: string): Promise<string> {
+export async function extraerPaginasPdfEnCliente(datos: ArrayBuffer, workerSrc?: string): Promise<FragmentoPdf[][]> {
   configurarWorkerPdf(workerSrc ?? (typeof window === 'undefined' ? GlobalWorkerOptions.workerSrc : WORKER_PDF_PUBLICO));
   if (!GlobalWorkerOptions.workerSrc) {
     throw new Error('No está configurado el worker de PDF.');
   }
   const pdf = await getDocument({ data: new Uint8Array(datos), isEvalSupported: false }).promise;
-  const paginas: string[] = [];
+  const paginas: FragmentoPdf[][] = [];
   for (let numero = 1; numero <= pdf.numPages; numero += 1) {
     const pagina = await pdf.getPage(numero);
     const contenido = await pagina.getTextContent();
-    paginas.push(agruparItemsPorRenglon(contenido.items as ItemTexto[]));
+    paginas.push(fragmentosDesdeItems(contenido.items as ItemTexto[]));
   }
-  return paginas.filter(Boolean).join('\n');
+  return paginas;
+}
+
+export function textoDePaginas(paginas: FragmentoPdf[][]): string {
+  return paginas
+    .map((fragmentos) =>
+      agruparItemsPorRenglon(
+        fragmentos.map((fragmento) => ({
+          str: fragmento.texto,
+          transform: [1, 0, 0, 1, fragmento.x, fragmento.y],
+        }))
+      )
+    )
+    .filter(Boolean)
+    .join('\n');
+}
+
+export async function extraerTextoPdfEnCliente(datos: ArrayBuffer, workerSrc?: string): Promise<string> {
+  return textoDePaginas(await extraerPaginasPdfEnCliente(datos, workerSrc));
 }

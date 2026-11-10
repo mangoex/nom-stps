@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/Sidebar';
 import { Navbar } from '@/components/Navbar';
-import { extraerTextoPdfEnCliente, sha256Hex, validarPdfCliente } from '@/lib/pdf-cliente';
+import { parsearNom033 } from '@/lib/nom033-parser';
+import { extraerPaginasPdfEnCliente, sha256Hex, textoDePaginas, validarPdfCliente } from '@/lib/pdf-cliente';
 import { interpretarRespuesta } from '@/lib/respuesta-http';
 import { CentroTrabajo, TipoEstudio } from '@/lib/types';
 import { ArrowLeft } from 'lucide-react';
@@ -53,7 +54,9 @@ export default function NuevoReporteReferenciaPage() {
       } else if (archivo.size > 50 * 1024 * 1024) {
         throw new Error('El archivo supera el máximo de 50 MB.');
       }
-      const texto = esPdf ? await extraerTextoPdfEnCliente(buffer) : new TextDecoder().decode(buffer).replace(/^\uFEFF/, '');
+      const paginas = esPdf ? await extraerPaginasPdfEnCliente(buffer) : [];
+      const texto = esPdf ? textoDePaginas(paginas) : new TextDecoder().decode(buffer).replace(/^\uFEFF/, '');
+      const parseo = esPdf ? parsearNom033(paginas) : { espacios: [], advertencias: ['El TXT no trae columnas; sube el PDF del anexo.'] };
       const hashSha256 = await sha256Hex(buffer);
       const respuesta = await fetch('/api/reportes-referencia', {
         method: 'POST',
@@ -67,6 +70,8 @@ export default function NuevoReporteReferenciaPage() {
           tamanoBytes: archivo.size,
           hashSha256,
           texto,
+          espacios: parseo.espacios,
+          advertencias: parseo.advertencias,
         }),
       });
       const crudo = await respuesta.text();

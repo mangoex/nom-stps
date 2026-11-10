@@ -9,7 +9,6 @@ import {
   parseTipoEspacio,
 } from './nom033-limites';
 import { compararEspaciosNom033, espaciosDesdeCaptura, ResultadoComparacion } from './nom033-comparacion';
-import { parsearNom033 } from './nom033-parser';
 import { getFileStorage } from './file-storage';
 import { getCurrentUser } from './auth';
 import { store } from './store';
@@ -34,6 +33,8 @@ export interface AltaReporteReferencia {
   tamanoBytes: number;
   hashSha256: string;
   texto: string;
+  espacios?: EntradaEspacioNom033[];
+  advertencias?: string[];
   usuarioId?: number;
 }
 
@@ -77,12 +78,28 @@ export async function subirReporteReferencia(input: AltaReporteReferencia): Prom
   });
 
   const esNom033 = tipo.claveNOM === 'NOM-033-STPS-2015';
-  const parseo = esNom033
-    ? parsearNom033(input.texto)
-    : {
-        espacios: [] as EspacioNom033[],
-        advertencias: ['Este extractor solo reconoce el anexo y las fichas de NOM-033-STPS-2015.'],
-      };
+  const entradas = Array.isArray(input.espacios) ? input.espacios : [];
+  const espacios = esNom033
+    ? entradas
+        .map((entrada) =>
+          evaluarEspacioNom033({
+            clave: normalizarClaveEspacio(entrada.clave || ''),
+            nombre: (entrada.nombre || '').trim(),
+            area: (entrada.area || '').trim(),
+            lel: numeroFlexible(entrada.lel),
+            o2: numeroFlexible(entrada.o2),
+            h2s: numeroFlexible(entrada.h2s),
+            co: numeroFlexible(entrada.co),
+            fecha: (entrada.fecha || '').trim(),
+            tipoDeclarado: parseTipoEspacio(entrada.tipoDeclarado),
+          })
+        )
+        .filter((espacio) => esClaveEspacio(espacio.clave))
+    : [];
+  const advertencias = [
+    ...(input.advertencias || []),
+    ...(esNom033 ? [] : ['Este flujo solo estructura el anexo de NOM-033-STPS-2015.']),
+  ];
 
   return store.insertarReporteReferencia(
     {
@@ -96,9 +113,9 @@ export async function subirReporteReferencia(input: AltaReporteReferencia): Prom
         tamanoBytes: input.tamanoBytes,
         storageKey: archivo.key,
       },
-      estadoExtraccion: parseo.espacios.length ? 'EXTRAIDO' : 'PENDIENTE',
-      espacios: parseo.espacios,
-      advertencias: parseo.advertencias,
+      estadoExtraccion: espacios.length ? 'EXTRAIDO' : 'PENDIENTE',
+      espacios,
+      advertencias,
     },
     input.usuarioId ?? 2
   );

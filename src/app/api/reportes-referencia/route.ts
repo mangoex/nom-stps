@@ -41,6 +41,8 @@ export async function POST(request: Request) {
       tamanoBytes: Number(body.tamanoBytes),
       hashSha256: String(body.hashSha256 || ''),
       texto: body.texto,
+      espacios: Array.isArray(body.espacios) ? body.espacios : [],
+      advertencias: Array.isArray(body.advertencias) ? body.advertencias.map(String) : [],
       usuarioId: resolverUsuarioId(request, body.usuarioId),
     });
 
